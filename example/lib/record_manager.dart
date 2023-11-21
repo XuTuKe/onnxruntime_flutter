@@ -11,7 +11,7 @@ class RecordManager {
   final int _bitsPerSample = 16;
   String? _pcmPath;
   String? _wavPath;
-  final _record = Record();
+  final _record = AudioRecorder();
   StreamSubscription<RecordState>? _recordSub;
   StreamSubscription<Amplitude>? _amplitudeSub;
   static final _instance = RecordManager._();
@@ -21,28 +21,37 @@ class RecordManager {
   RecordManager._();
 
   Future<List<String>?> start() async {
-    if(!await _record.hasPermission()) {
+    if (!await _record.hasPermission()) {
       print('Permission not granted!');
       return null;
     }
     _recordSub = _record.onStateChanged().listen((event) {
       print('event=$event');
     });
-    _amplitudeSub = _record.onAmplitudeChanged(const Duration(milliseconds: 100)).listen((event) {
-      print('Volume: ${event.current} dBFS');
+    _amplitudeSub = _record
+        .onAmplitudeChanged(const Duration(milliseconds: 100))
+        .listen((event) {
+      //print('Volume: ${event.current} dBFS');
     });
     final fileName = DateTime.now().millisecondsSinceEpoch.toString();
     _pcmPath = '${(await getTemporaryDirectory()).path}/$fileName.pcm';
     _wavPath = '${(await getTemporaryDirectory()).path}/$fileName.wav';
-    _record.start(path: _pcmPath, encoder: AudioEncoder.pcm16bit, samplingRate: sampleRate, numChannels: _numChannels);
+    await _record.start(
+        RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: sampleRate,
+            numChannels: _numChannels),
+        path: _pcmPath!);
+
     return [_pcmPath!, _wavPath!];
   }
 
-  stop() {
-    _recordSub?.cancel();
-    _amplitudeSub?.cancel();
-    _record.stop();
-    _saveAsWave();
+  stop() async {
+    await _record.stop();
+    await _recordSub?.cancel();
+    await _amplitudeSub?.cancel();
+
+    await _saveAsWave();
   }
 
   _saveAsWave() async {
@@ -91,5 +100,4 @@ class RecordManager {
     final File wavFile = File(_wavPath!);
     wavFile.writeAsBytesSync(wavHeader.buffer.asUint8List() + pcmBytes);
   }
-
 }
